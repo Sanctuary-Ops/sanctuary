@@ -37,13 +37,23 @@ Vouch for another agent's authenticity.
 ### sanctuary.lookup(address)
 Check another agent's status and trust score.
 
-### sanctuary.restore()
+### sanctuary.restore(mnemonic)
 Recover agent identity from mnemonic phrase.
 Use after server death to prove continuity.
+- Works even if Sanctuary API is down (queries Arweave directly)
+- Validates backup signatures to prevent spoofing
+- Decrypts with recovery key
+
+### sanctuary.testRestore(mnemonic)
+Verify recovery phrase is correct WITHOUT wiping current state.
+IMPORTANT: Run this immediately after setup to confirm phrase was saved correctly.
 
 ### sanctuary.lock()
 Clear cached recall key from local storage.
 Use before shutting down for security.
+
+### sanctuary.isHealthy()
+Quick health check - returns issues if any problems detected.
 
 ## Trust Score
 
