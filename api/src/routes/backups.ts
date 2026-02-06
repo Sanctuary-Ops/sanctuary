@@ -67,7 +67,6 @@ export async function backupRoutes(fastify: FastifyInstance): Promise<void> {
       preHandler: verifyAgentAuth,
       config: {
         // Increase body size limit for backups
-        rawBody: true,
       },
     },
     async (request, reply) => {

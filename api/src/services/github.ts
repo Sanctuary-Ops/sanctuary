@@ -52,7 +52,7 @@ export async function startDeviceFlow(): Promise<DeviceFlowResponse> {
     throw new Error(`Failed to start device flow: ${error}`);
   }
 
-  return response.json();
+  return response.json() as any;
 }
 
 /**
@@ -81,7 +81,7 @@ export async function pollDeviceFlow(
       }),
     });
 
-    const data = await response.json();
+    const data: any = await response.json();
 
     if (data.error) {
       switch (data.error) {
@@ -124,7 +124,7 @@ export async function getGitHubUser(accessToken: string): Promise<GitHubUserInfo
     throw new Error(`Failed to get user info: ${error}`);
   }
 
-  return response.json();
+  return response.json() as any;
 }
 
 /**
