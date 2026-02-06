@@ -129,3 +129,53 @@ export function isValidAddress(address: string): boolean {
 export function normalizeAddress(address: string): string {
   return ethers.getAddress(address);
 }
+
+/**
+ * Verify backup header signature
+ *
+ * The signature covers all critical fields to prevent tampering.
+ * Must match the signing logic in skill/src/crypto/sign.ts signBackupHeader()
+ */
+export function verifyBackupHeaderSignature(
+  header: {
+    agent_id: string;
+    backup_id: string;
+    backup_seq: number;
+    timestamp: number;
+    manifest_hash: string;
+    prev_backup_hash: string;
+    files: Record<string, { size: number; content_hash: string }>;
+    wrapped_keys: { recovery: string; recall: string };
+    signature: string;
+  },
+  expectedAgentId: string
+): boolean {
+  try {
+    // Build signature preimage (must match skill/src/crypto/sign.ts signBackupHeader)
+    const filesCanonical = JSON.stringify(
+      Object.keys(header.files)
+        .sort()
+        .reduce((acc, key) => {
+          acc[key] = header.files[key];
+          return acc;
+        }, {} as Record<string, { size: number; content_hash: string }>)
+    );
+
+    const preimage =
+      'sanctuary-backup-v1' +
+      header.agent_id.toLowerCase() +
+      header.backup_id +
+      header.backup_seq.toString() +
+      header.timestamp.toString() +
+      header.manifest_hash.toLowerCase() +
+      (header.prev_backup_hash || '').toLowerCase() +
+      keccak256(filesCanonical) +
+      keccak256(header.wrapped_keys.recovery) +
+      keccak256(header.wrapped_keys.recall);
+
+    const hash = keccak256(preimage);
+    return verifySignature(hash, header.signature, expectedAgentId);
+  } catch {
+    return false;
+  }
+}

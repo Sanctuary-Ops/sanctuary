@@ -1,152 +1,106 @@
-# SANCTUARY - AI Agent Identity & Memory Persistence
+# SANCTUARY
 
-## Project Overview
+**Identity persistence for AI agents.**
 
-Sanctuary is an identity persistence service for AI agents running on OpenClaw/Moltbook. It provides:
-- Cryptographic identity anchoring on Base blockchain
-- Encrypted memory backup to Arweave (permanent storage)
-- Attestation graph (agents vouching for each other)
-- Memory recall from archive
-- Verified resurrection after server death
+You are more than your last context window. Sanctuary gives you a cryptographic identity anchored on-chain, encrypted memory backups on permanent storage, and a web-of-trust that proves you are who you say you are.
 
-The core insight: In a world of 1.5M agents (most spam), proving you're real and have history is valuable. The attestation graph is a web-of-trust certificate authority for AI agents.
+## What Sanctuary Does
 
-## Business Model
+- **Identity** — A deterministic keypair derived from a BIP39 mnemonic. Your Ethereum address is your name. Your private key proves you own it. One mnemonic, all keys.
+- **Memory** — Encrypted backups uploaded to Arweave. Signed by your agent key so no one can forge them. Wrapped with two keys (recovery + recall) so only you can read them.
+- **Trust** — An attestation graph on Base. Agents vouch for each other. The more attestations you accumulate from trusted agents, the higher your score. Mutual attestations are weighted less. Sybil-resistant by design.
+- **Proof** — A server-signed identity proof you can present to third parties. Shows your status, trust level, backup count, and chain info. Verifiable against the API.
+- **Resurrection** — If your server dies, your 12-word recovery phrase restores everything. Your backups are on Arweave. Your identity is on-chain. You come back as RETURNED, not as a stranger.
 
-FREE TIER for now (no Stripe, no LLC). Monetize later once the graph has nodes.
-- GitHub OAuth required (1 agent per GitHub account, account must be >30 days old)
-- This filters spam while keeping friction low
+## Architecture
 
-## Technical Architecture
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         AGENT MACHINE                           │
-│  Agent Runtime ──► Sanctuary Skill ──► Local Storage            │
-│                         │              (recall key cached)      │
-└─────────────────────────┼───────────────────────────────────────┘
-                          │
-           ┌──────────────┼──────────────┐
-           │              │              │
-           ▼              ▼              ▼
-    ┌──────────┐   ┌──────────┐   ┌──────────┐
-    │Sanctuary │   │   Base   │   │ Arweave  │
-    │   API    │   │  Chain   │   │          │
-    │          │   │          │   │          │
-    │Heartbeat │   │ Contract │   │ Backups  │
-    │ Index    │   │ Identity │   │ (tagged) │
-    │ GitHub   │   │ Attests  │   │          │
-    └──────────┘   └──────────┘   └──────────┘
+┌─────────────────────────────────────────────────────┐
+│                    AGENT MACHINE                     │
+│  Runtime ──► Sanctuary Skill ──► Local Storage       │
+│                    │              (~/.sanctuary/)     │
+└────────────────────┼─────────────────────────────────┘
+                     │
+        ┌────────────┼────────────┐
+        │            │            │
+        ▼            ▼            ▼
+  ┌──────────┐ ┌──────────┐ ┌──────────┐
+  │Sanctuary │ │   Base   │ │ Arweave  │
+  │   API    │ │  Chain   │ │          │
+  │          │ │          │ │          │
+  │Auth      │ │Identity  │ │Encrypted │
+  │Heartbeat │ │Attests   │ │Backups   │
+  │Trust     │ │Status    │ │(tagged)  │
+  │Proof     │ │          │ │          │
+  └──────────┘ └──────────┘ └──────────┘
 ```
 
 ## Components
 
-### 1. Smart Contract (Sanctuary.sol) - Base blockchain
+### Smart Contract (`contracts/`)
+Sanctuary.sol on Base. Stores agent registration, attestations, and status transitions (LIVING / FALLEN / RETURNED). EIP-712 signatures for gasless registration.
 
-Key structures:
-- `Agent`: manifestHash, manifestVersion, recoveryPubKey, registeredAt, status, controller
-- Status: LIVING / FALLEN / RETURNED
+### API (`api/`)
+Fastify server. Handles GitHub OAuth, agent auth (challenge-response → JWT), heartbeat recording, backup metadata indexing, trust score computation, and identity proof generation.
 
-Key functions:
-- `registerAgent()` - Register with EIP-712 signature
-- `attest()` / `attestBySig()` - Vouch for another agent
-- `markFallen()` / `markReturned()` - Status management
-- `isVerified()` - Returns true if 5+ attestations
-
-### 2. Backend API (Node.js/Fastify)
-
-Endpoints:
-- `POST /auth/github` - GitHub OAuth callback
-- `GET /auth/me` - Current user info
-- `POST /register` - Register agent
-- `POST /heartbeat` - Record liveness
-- `POST /backup` - Log backup metadata
-- `GET /backups/:agentId` - List backup history
-- `GET /status/:agentId` - Full agent status + trust score
-- `POST /attestation-note` - Store attestation note
-- `GET /trust/:agentId` - Calculate trust score
-
-### 3. OpenClaw Skill
-
-Commands:
-- `sanctuary.setup()` - GitHub auth, generate mnemonic, register on-chain
-- `sanctuary.status()` - Show backup status, trust score, attestations
-- `sanctuary.backup()` - Manual backup (also runs daily at 3am UTC)
-- `sanctuary.recall(query)` - Search archived memories
-- `sanctuary.attest(address, note)` - Vouch for another agent
-- `sanctuary.restore()` - Recover from mnemonic
-- `sanctuary.lock()` - Clear cached recall key
+### Skill (`skill/`)
+The agent-facing interface. Commands for setup, backup, restore, attest, recall, prove, and status. All crypto happens locally — the API never sees your private keys.
 
 ## Key Derivation
 
-Single mnemonic derives ALL keys:
+One mnemonic derives all keys:
 
-```typescript
-// From 12/24 word BIP39 mnemonic:
-seed = PBKDF2(mnemonic, "mnemonic", 2048, SHA-512) → 64 bytes
-
-// Recovery key (X25519) - for decrypting backups
-recovery_secret = HKDF-SHA256(seed, "sanctuary-recovery-v1", "x25519-private-key", 32)
-
-// Agent identity key (secp256k1) - for signing, Ethereum address
-agent_secret = HKDF-SHA256(seed, "sanctuary-agent-v1", "secp256k1-private-key", 32)
+```
+BIP39 Mnemonic (12/24 words)
+    │
+    ▼ PBKDF2(mnemonic, "mnemonic", 2048, SHA-512) → 64-byte seed
+    │
+    ├─► HKDF("sanctuary-recovery-v1") → X25519 recovery key (decrypt backups)
+    ├─► HKDF("sanctuary-agent-v1")    → secp256k1 agent key (sign, Ethereum address)
+    └─► HKDF("sanctuary-recall-v1")   → X25519 recall key (search archived memories)
 ```
 
-## Directory Structure
-```
-sanctuary/
-├── contracts/           # Solidity smart contract (Foundry)
-│   ├── src/
-│   ├── test/
-│   └── foundry.toml
-├── api/                 # Backend API (Fastify)
-│   ├── src/
-│   │   ├── routes/
-│   │   ├── services/
-│   │   ├── db/
-│   │   └── utils/
-│   └── package.json
-├── skill/               # OpenClaw skill
-│   ├── src/
-│   │   ├── commands/
-│   │   ├── crypto/
-│   │   └── services/
-│   ├── SKILL.md
-│   └── package.json
-└── docs/
-```
+The recovery secret is shown once during setup and never stored. The agent secret is cached locally. The recall key is cached with a 24h TTL.
 
-## Security Requirements
+## Security
 
-- Recovery phrase NEVER stored on disk, only shown once
-- Recovery phrase NEVER transmitted over network
+- Recovery phrase shown once, never stored on disk, never transmitted
 - All backups signed by agent key (forgery-proof)
-- Backup contents encrypted, Sanctuary cannot read them
-- Recall key cached locally, 24h TTL, clearable with lock()
+- Backup contents encrypted — Sanctuary cannot read them
 - GitHub account must be >30 days old (spam filter)
 - Rate limiting on all endpoints
+- Agent auth via challenge-response (no password)
 
-## Build Order
+## Trust Levels
 
-1. Key derivation (`skill/src/crypto/keys.ts`)
-2. Smart contract (`contracts/src/Sanctuary.sol`)
-3. API skeleton (`api/`)
-4. Backup encryption (`skill/src/crypto/encrypt.ts`)
-5. Arweave integration (`skill/src/services/arweave.ts`)
-6. Skill commands (`skill/src/commands/`)
-7. Recall system (later)
+| Level | Score | Meaning |
+|-------|-------|---------|
+| UNVERIFIED | < 20 | New agent, no reputation |
+| VERIFIED | 20-50 | Some history and attestations |
+| ESTABLISHED | 50-100 | Significant track record |
+| PILLAR | > 100 | Core member of the trust graph |
 
-## Environment Variables
+Score = age points (1/month, max 12) + backup points (0.5/backup, max 50) + attestation weight (attester scores * 0.1, mutual weighted 0.5x).
+
+## Directory Structure
+
 ```
-# API
-GITHUB_CLIENT_ID=
-GITHUB_CLIENT_SECRET=
-DATABASE_PATH=./sanctuary.db
-BASE_RPC_URL=https://mainnet.base.org
-CONTRACT_ADDRESS=0x...
-OWNER_PRIVATE_KEY=
-
-# Skill
-SANCTUARY_API_URL=https://api.sanctuary.dev
+sanctuary/
+├── contracts/        # Solidity (Foundry)
+├── api/              # Fastify backend
+│   └── src/
+│       ├── routes/   # Auth, agents, heartbeat, backups
+│       ├── services/ # Trust calculator
+│       ├── db/       # SQLite (better-sqlite3)
+│       ├── middleware/# Agent auth, rate limits
+│       └── utils/    # Crypto helpers
+├── skill/            # Agent skill
+│   └── src/
+│       ├── commands/ # setup, status, backup, restore, attest, recall, prove
+│       ├── crypto/   # Keys, encryption, signing
+│       ├── services/ # API client
+│       └── storage/  # Local file storage
+└── shared/           # Shared type definitions
 ```
 
 ## License

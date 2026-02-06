@@ -11,6 +11,7 @@ export interface Config {
   port: number;
   host: string;
   nodeEnv: string;
+  publicUrl: string;
 
   // Database
   databasePath: string;
@@ -27,6 +28,7 @@ export interface Config {
   baseRpcUrl: string;
   contractAddress: string;
   ownerPrivateKey: string;
+  chainId: number;
 
   // Arweave
   irysPrivateKey: string;
@@ -69,6 +71,7 @@ export function loadConfig(): Config {
     port: optionalEnvInt('PORT', 3000),
     host: optionalEnv('HOST', '0.0.0.0'),
     nodeEnv: optionalEnv('NODE_ENV', 'development'),
+    publicUrl: optionalEnv('PUBLIC_URL', ''),
 
     // Database
     databasePath: optionalEnv('DATABASE_PATH', './sanctuary.db'),
@@ -85,6 +88,7 @@ export function loadConfig(): Config {
     baseRpcUrl: optionalEnv('BASE_RPC_URL', 'https://sepolia.base.org'),
     contractAddress: optionalEnv('CONTRACT_ADDRESS', ''),
     ownerPrivateKey: optionalEnv('OWNER_PRIVATE_KEY', ''),
+    chainId: optionalEnvInt('CHAIN_ID', 84532), // 84532 = Base Sepolia, 8453 = Base mainnet
 
     // Arweave
     irysPrivateKey: optionalEnv('IRYS_PRIVATE_KEY', ''),
@@ -107,15 +111,13 @@ export function validateConfig(config: Config): string[] {
     if (!config.contractAddress) {
       errors.push('CONTRACT_ADDRESS is required in production');
     }
-    if (!config.ownerPrivateKey) {
-      errors.push('OWNER_PRIVATE_KEY is required in production');
-    }
-    if (!config.irysPrivateKey) {
-      errors.push('IRYS_PRIVATE_KEY is required in production');
-    }
     if (config.jwtSecret.length < 32) {
       errors.push('JWT_SECRET should be at least 32 characters in production');
     }
+    // OWNER_PRIVATE_KEY and IRYS_PRIVATE_KEY are intentionally optional:
+    // - Owner operations (markFallen/markReturned) run from a local machine
+    // - Irys/Arweave uploads are not yet implemented
+    // Warnings for these are logged in index.ts startup
   }
 
   return errors;

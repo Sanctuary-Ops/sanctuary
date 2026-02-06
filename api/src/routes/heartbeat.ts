@@ -7,7 +7,7 @@
 import { FastifyInstance } from 'fastify';
 import { getDb } from '../db/index.js';
 import { verifyAgentAuth } from '../middleware/agent-auth.js';
-import { verifyHeartbeatSignature, isTimestampValid } from '../utils/crypto.js';
+import { verifyHeartbeatSignature, isTimestampValid, isValidAddress, normalizeAddress } from '../utils/crypto.js';
 
 export async function heartbeatRoutes(fastify: FastifyInstance): Promise<void> {
   const db = getDb();
@@ -103,7 +103,15 @@ export async function heartbeatRoutes(fastify: FastifyInstance): Promise<void> {
   }>('/heartbeat/:agentId', async (request, reply) => {
     const { agentId } = request.params;
 
-    const heartbeat = db.getLatestHeartbeat(agentId);
+    if (!isValidAddress(agentId)) {
+      return reply.status(400).send({
+        success: false,
+        error: 'Invalid agent ID',
+      });
+    }
+
+    const normalizedId = normalizeAddress(agentId);
+    const heartbeat = db.getLatestHeartbeat(normalizedId);
 
     if (!heartbeat) {
       return reply.status(404).send({

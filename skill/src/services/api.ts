@@ -82,6 +82,22 @@ export interface BackupUploadResponse {
   received_at: number;
 }
 
+export interface ProofResponse {
+  agent_id: string;
+  status: string;
+  trust_score: number;
+  trust_level: string;
+  backup_count: number;
+  last_heartbeat: number | null;
+  registered_at: number;
+  chain_id: number;
+  contract_address: string;
+  issued_at: number;
+  proof_hash: string;
+  server_signature: string;
+  verify_url: string;
+}
+
 /**
  * Sanctuary API Client
  */
@@ -269,6 +285,13 @@ export class SanctuaryApi {
     return this.request('GET', `/agents/${encodeURIComponent(agentId)}/status`, {
       auth: false,
     });
+  }
+
+  /**
+   * Generate server-signed identity proof
+   */
+  async generateProof(agentId: string): Promise<ApiResponse<ProofResponse>> {
+    return this.request<ProofResponse>('POST', `/agents/${encodeURIComponent(agentId)}/proof`);
   }
 
   // ============ Heartbeat ============

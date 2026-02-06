@@ -5,8 +5,11 @@
  */
 
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { createHash, createHmac } from 'crypto';
 import { getDb } from '../db/index.js';
+import { getConfig } from '../config.js';
 import { isValidAddress, normalizeAddress } from '../utils/crypto.js';
+import { verifyAgentAuth } from '../middleware/agent-auth.js';
 
 export async function agentRoutes(fastify: FastifyInstance): Promise<void> {
   const db = getDb();
@@ -231,6 +234,85 @@ export async function agentRoutes(fastify: FastifyInstance): Promise<void> {
         heartbeat: {
           last_seen: latestHeartbeat?.received_at || null,
         },
+      },
+    });
+  });
+
+  /**
+   * POST /agents/:agentId/proof
+   * Generate a server-signed identity proof (requires agent auth)
+   *
+   * Returns a JSON payload with HMAC-SHA256 server signature
+   * that third parties can verify against the API.
+   */
+  fastify.post<{
+    Params: { agentId: string };
+  }>('/agents/:agentId/proof', { preHandler: [verifyAgentAuth] }, async (request, reply) => {
+    const { agentId } = request.params;
+
+    if (!isValidAddress(agentId)) {
+      return reply.status(400).send({
+        success: false,
+        error: 'Invalid agent ID',
+      });
+    }
+
+    const normalizedId = normalizeAddress(agentId);
+
+    // Verify requester owns this agent
+    if (normalizedId !== request.agentId) {
+      return reply.status(403).send({
+        success: false,
+        error: 'Can only generate proof for your own agent',
+      });
+    }
+
+    const agent = db.getAgent(normalizedId);
+    if (!agent) {
+      return reply.status(404).send({
+        success: false,
+        error: 'Agent not found',
+      });
+    }
+
+    const config = getConfig();
+    const trustScore = db.getTrustScore(normalizedId);
+    const latestHeartbeat = db.getLatestHeartbeat(normalizedId);
+    const backupCount = db.getBackupCount(normalizedId);
+    const now = Math.floor(Date.now() / 1000);
+
+    // Build proof payload (deterministic key order)
+    const payload = {
+      agent_id: agent.agent_id,
+      backup_count: backupCount,
+      chain_id: config.chainId,
+      contract_address: config.contractAddress,
+      issued_at: now,
+      last_heartbeat: latestHeartbeat?.received_at || null,
+      registered_at: agent.registered_at,
+      status: agent.status,
+      trust_level: trustScore?.level || 'UNVERIFIED',
+      trust_score: trustScore?.score || 0,
+    };
+
+    // Hash the payload
+    const payloadJson = JSON.stringify(payload);
+    const proofHash = createHash('sha256').update(payloadJson).digest('hex');
+
+    // Sign with HMAC-SHA256 using JWT secret
+    const serverSignature = createHmac('sha256', config.jwtSecret)
+      .update(proofHash)
+      .digest('hex');
+
+    return reply.send({
+      success: true,
+      data: {
+        ...payload,
+        proof_hash: proofHash,
+        server_signature: serverSignature,
+        verify_url: config.publicUrl
+          ? `${config.publicUrl}/agents/${normalizedId}/status`
+          : `http://localhost:${config.port}/agents/${normalizedId}/status`,
       },
     });
   });

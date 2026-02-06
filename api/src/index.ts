@@ -10,7 +10,8 @@ import jwt from '@fastify/jwt';
 import rateLimit from '@fastify/rate-limit';
 
 import { loadConfig, validateConfig, getConfig } from './config.js';
-import { initDb, closeDb } from './db/index.js';
+import { initDb, getDb, closeDb } from './db/index.js';
+import { configureRateLimits } from './middleware/rate-limit.js';
 import { authRoutes } from './routes/auth.js';
 import { agentRoutes } from './routes/agents.js';
 import { heartbeatRoutes } from './routes/heartbeat.js';
@@ -30,9 +31,26 @@ async function main() {
     }
   }
 
+  // Warn about missing optional keys that will cause runtime failures
+  if (!config.ownerPrivateKey) {
+    console.warn('  OWNER_PRIVATE_KEY not set — blockchain operations will fail');
+  }
+  if (!config.irysPrivateKey) {
+    console.warn('  IRYS_PRIVATE_KEY not set — Arweave uploads will fail');
+  }
+  if (!config.contractAddress) {
+    console.warn('  CONTRACT_ADDRESS not set — on-chain interactions will fail');
+  }
+
   // Initialize database
   console.log(`Initializing database at ${config.databasePath}...`);
-  initDb(config.databasePath);
+  const db = initDb(config.databasePath);
+
+  // Cleanup expired auth challenges on startup
+  const cleaned = db.cleanupExpiredChallenges();
+  if (cleaned > 0) {
+    console.log(`  Cleaned up ${cleaned} expired auth challenge(s)`);
+  }
 
   // Create Fastify instance
   const fastify = Fastify({
@@ -50,9 +68,7 @@ async function main() {
 
   // Register plugins
   await fastify.register(cors, {
-    origin: config.nodeEnv === 'production'
-      ? ['https://sanctuary.dev', 'https://api.sanctuary.dev']
-      : true,
+    origin: true, // All clients are agents making server-to-server calls; tighten later if adding a web dashboard
     credentials: true,
   });
 
@@ -64,6 +80,9 @@ async function main() {
     max: 100,
     timeWindow: '1 minute',
   });
+
+  // Apply per-route rate limits (heartbeat 10/min, registration 3/hr, backup 1/day)
+  configureRateLimits(fastify);
 
   // Health check
   fastify.get('/health', async () => ({
@@ -81,6 +100,7 @@ async function main() {
   // Register routes
   await fastify.register(authRoutes, { prefix: '/auth' });
   await fastify.register(agentRoutes, { prefix: '/agents' });
+  // Heartbeat routes define their own /heartbeat path (no prefix needed)
   await fastify.register(heartbeatRoutes);
   await fastify.register(backupRoutes, { prefix: '/backups' });
 
@@ -101,9 +121,22 @@ async function main() {
       port: config.port,
       host: config.host,
     });
-    console.log(`\n🏛️  Sanctuary API running at ${address}`);
+    console.log(`\n  Sanctuary API running at ${address}`);
     console.log(`   Environment: ${config.nodeEnv}`);
     console.log(`   Database: ${config.databasePath}\n`);
+
+    // Periodic cleanup: expired auth challenges every 15 minutes
+    setInterval(() => {
+      try {
+        const db = getDb();
+        const removed = db.cleanupExpiredChallenges();
+        if (removed > 0) {
+          fastify.log.info({ removed }, 'Cleaned up expired auth challenges');
+        }
+      } catch (err) {
+        fastify.log.error(err, 'Failed to cleanup expired challenges');
+      }
+    }, 15 * 60 * 1000);
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);

@@ -179,7 +179,7 @@ function verifyBackupSignature(header: any, agentId: string): boolean {
       header.backup_seq.toString() +
       header.timestamp.toString() +
       header.manifest_hash.toLowerCase() +
-      header.prev_backup_hash.toLowerCase() +
+      (header.prev_backup_hash || '').toLowerCase() +
       keccak256(filesCanonical) +
       keccak256(header.wrapped_keys.recovery) +
       keccak256(header.wrapped_keys.recall);

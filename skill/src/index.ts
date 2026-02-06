@@ -13,6 +13,7 @@
  * - lock()       - Clear cached recall key
  * - testRestore() - Verify recovery phrase
  * - recall()     - Search archived memories
+ * - prove()      - Generate identity proof
  */
 
 // Re-export commands
@@ -22,6 +23,7 @@ export { backup, pin } from './commands/backup.js';
 export { restore, lock } from './commands/restore.js';
 export { attest, lookup, displayLookup } from './commands/attest.js';
 export { recall, displayRecall } from './commands/recall.js';
+export { prove, displayProve } from './commands/prove.js';
 
 // Re-export utilities
 export { generateNewMnemonic, deriveKeys, isValidMnemonic } from './crypto/keys.js';
@@ -43,6 +45,7 @@ export type {
   AttestResult,
   LookupResult,
   RecallResult,
+  ProofResult,
   BackupFiles,
   SkillConfig,
 } from './types.js';
@@ -133,6 +136,16 @@ export const sanctuary = {
   displayRecall: async (query: string) => {
     const { displayRecall } = await import('./commands/recall.js');
     return displayRecall(query);
+  },
+
+  prove: async () => {
+    const { prove } = await import('./commands/prove.js');
+    return prove();
+  },
+
+  displayProve: async () => {
+    const { displayProve } = await import('./commands/prove.js');
+    return displayProve();
   },
 
   // Utilities

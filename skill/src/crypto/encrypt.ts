@@ -69,8 +69,8 @@ export function deriveFileKey(dek: Uint8Array, filename: string): Uint8Array {
  * 4. Encrypt DEK with AES-GCM
  */
 export function wrapKey(dek: Uint8Array, recipientPubKey: Uint8Array): WrappedKey {
-  // Generate ephemeral keypair
-  const ephemeralSecret = randomBytes(32);
+  // Generate ephemeral keypair (copy to avoid mutating randomBytes result)
+  const ephemeralSecret = new Uint8Array(randomBytes(32));
   // Apply X25519 clamping
   ephemeralSecret[0] &= 248;
   ephemeralSecret[31] &= 127;

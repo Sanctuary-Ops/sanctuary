@@ -136,3 +136,22 @@ export interface LookupResult {
   registeredAt?: number;
   attestationCount?: number;
 }
+
+/**
+ * Identity proof result
+ */
+export interface ProofResult {
+  agentId: string;
+  status: string;
+  trustScore: number;
+  trustLevel: string;
+  backupCount: number;
+  lastHeartbeat: number | null;
+  registeredAt: number;
+  chainId: number;
+  contractAddress: string;
+  issuedAt: number;
+  proofHash: string;
+  serverSignature: string;
+  verifyUrl: string;
+}

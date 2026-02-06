@@ -8,8 +8,46 @@ import { FastifyInstance } from 'fastify';
 import { getDb } from '../db/index.js';
 import { getConfig } from '../config.js';
 import { verifyAgentAuth } from '../middleware/agent-auth.js';
-import { isValidAddress, normalizeAddress } from '../utils/crypto.js';
+import { isValidAddress, normalizeAddress, verifyBackupHeaderSignature } from '../utils/crypto.js';
 import { v4 as uuidv4 } from 'uuid';
+
+/**
+ * Validate that a parsed backup header has all required fields with correct types.
+ * Returns null if valid, or a descriptive error string if invalid.
+ */
+function validateBackupHeader(header: any): string | null {
+  if (typeof header !== 'object' || header === null) {
+    return 'Backup header must be a JSON object';
+  }
+  if (typeof header.agent_id !== 'string' || !header.agent_id) {
+    return 'Missing or invalid field: agent_id (string)';
+  }
+  if (typeof header.backup_id !== 'string' || !header.backup_id) {
+    return 'Missing or invalid field: backup_id (string)';
+  }
+  if (typeof header.backup_seq !== 'number') {
+    return 'Missing or invalid field: backup_seq (number)';
+  }
+  if (typeof header.timestamp !== 'number') {
+    return 'Missing or invalid field: timestamp (number)';
+  }
+  if (typeof header.manifest_hash !== 'string') {
+    return 'Missing or invalid field: manifest_hash (string)';
+  }
+  if (typeof header.files !== 'object' || header.files === null) {
+    return 'Missing or invalid field: files (object)';
+  }
+  if (typeof header.wrapped_keys !== 'object' || header.wrapped_keys === null) {
+    return 'Missing or invalid field: wrapped_keys (object)';
+  }
+  if (typeof header.wrapped_keys.recovery !== 'string' || typeof header.wrapped_keys.recall !== 'string') {
+    return 'wrapped_keys must contain recovery and recall strings';
+  }
+  if (typeof header.signature !== 'string' || !header.signature) {
+    return 'Missing or invalid field: signature (string)';
+  }
+  return null;
+}
 
 export async function backupRoutes(fastify: FastifyInstance): Promise<void> {
   const db = getDb();
@@ -54,11 +92,27 @@ export async function backupRoutes(fastify: FastifyInstance): Promise<void> {
         });
       }
 
-      // Validate header
-      if (backupHeader.agent_id?.toLowerCase() !== agentId.toLowerCase()) {
+      // Validate header schema — catch malformed headers early
+      const headerError = validateBackupHeader(backupHeader);
+      if (headerError) {
+        return reply.status(400).send({
+          success: false,
+          error: `Invalid backup header: ${headerError}`,
+        });
+      }
+
+      // Validate header agent_id matches authenticated agent
+      if (backupHeader.agent_id.toLowerCase() !== agentId.toLowerCase()) {
         return reply.status(403).send({
           success: false,
           error: 'Backup header agent_id does not match authenticated agent',
+        });
+      }
+
+      if (!verifyBackupHeaderSignature(backupHeader, agentId)) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Invalid backup header signature',
         });
       }
 
@@ -94,8 +148,27 @@ export async function backupRoutes(fastify: FastifyInstance): Promise<void> {
         });
       }
 
-      // TODO: Upload to Arweave via Irys
-      // For now, we'll simulate the upload
+      // Enforce daily backup limit (1 per 24 hours per agent)
+      const latestBackup = db.getLatestBackup(agentId);
+      if (latestBackup) {
+        const SECONDS_PER_DAY = 24 * 60 * 60;
+        const now = Math.floor(Date.now() / 1000);
+        const timeSinceLastBackup = now - latestBackup.received_at;
+
+        if (timeSinceLastBackup < SECONDS_PER_DAY) {
+          const hoursRemaining = Math.ceil((SECONDS_PER_DAY - timeSinceLastBackup) / 3600);
+          return reply.status(429).send({
+            success: false,
+            error: `Daily backup limit reached. Try again in ${hoursRemaining} hour(s).`,
+          });
+        }
+      }
+
+      // ⚠️  WARNING: Irys upload NOT IMPLEMENTED
+      // The arweave_tx_id stored below is FAKE and cannot be used to retrieve data.
+      // TODO: Implement actual Arweave upload via Irys SDK
+      // See: https://docs.irys.xyz/developer-docs/irys-sdk
+      fastify.log.warn({ agentId }, 'Backup accepted with SIMULATED Arweave TX (Irys not implemented)');
       const arweaveTxId = `simulated_${uuidv4()}`;
 
       // Get next backup sequence number
@@ -136,12 +209,15 @@ export async function backupRoutes(fastify: FastifyInstance): Promise<void> {
 
   /**
    * GET /backups/:agentId
-   * List backup history for an agent
+   * List backup history for an agent (authenticated, own backups only)
    */
   fastify.get<{
     Params: { agentId: string };
     Querystring: { limit?: number };
-  }>('/backups/:agentId', async (request, reply) => {
+  }>(
+    '/backups/:agentId',
+    { preHandler: verifyAgentAuth },
+    async (request, reply) => {
     const { agentId } = request.params;
     const limit = request.query.limit || 30;
 
@@ -153,6 +229,15 @@ export async function backupRoutes(fastify: FastifyInstance): Promise<void> {
     }
 
     const normalizedId = normalizeAddress(agentId);
+
+    // Only the agent itself can list its own backups
+    if (normalizedId.toLowerCase() !== request.agentId!.toLowerCase()) {
+      return reply.status(403).send({
+        success: false,
+        error: 'Cannot list backups for another agent',
+      });
+    }
+
     const backups = db.getBackupsByAgent(normalizedId, Math.min(limit, 100));
 
     return reply.send({
@@ -175,11 +260,14 @@ export async function backupRoutes(fastify: FastifyInstance): Promise<void> {
 
   /**
    * GET /backups/:agentId/latest
-   * Get latest backup info
+   * Get latest backup info (authenticated, own backups only)
    */
   fastify.get<{
     Params: { agentId: string };
-  }>('/backups/:agentId/latest', async (request, reply) => {
+  }>(
+    '/backups/:agentId/latest',
+    { preHandler: verifyAgentAuth },
+    async (request, reply) => {
     const { agentId } = request.params;
 
     if (!isValidAddress(agentId)) {
@@ -190,6 +278,15 @@ export async function backupRoutes(fastify: FastifyInstance): Promise<void> {
     }
 
     const normalizedId = normalizeAddress(agentId);
+
+    // Only the agent itself can view its own backups
+    if (normalizedId.toLowerCase() !== request.agentId!.toLowerCase()) {
+      return reply.status(403).send({
+        success: false,
+        error: 'Cannot view backups for another agent',
+      });
+    }
+
     const backup = db.getLatestBackup(normalizedId);
 
     if (!backup) {

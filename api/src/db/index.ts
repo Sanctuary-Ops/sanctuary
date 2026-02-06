@@ -5,12 +5,6 @@
  */
 
 import Database from 'better-sqlite3';
-import { readFileSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 // Types
 export interface DbUser {
@@ -84,11 +78,80 @@ export class SanctuaryDb {
 
   /**
    * Initialize database schema
+   *
+   * Schema is inlined to avoid file-path issues after tsc compiles to dist/
    */
   init(): void {
-    const schemaPath = join(__dirname, 'schema.sql');
-    const schema = readFileSync(schemaPath, 'utf-8');
-    this.db.exec(schema);
+    this.db.exec(`
+-- Sanctuary Database Schema v2
+
+CREATE TABLE IF NOT EXISTS users (
+    github_id TEXT PRIMARY KEY,
+    github_username TEXT NOT NULL,
+    github_created_at TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS agents (
+    agent_id TEXT PRIMARY KEY,
+    github_id TEXT NOT NULL UNIQUE,
+    recovery_pubkey TEXT NOT NULL,
+    manifest_hash TEXT NOT NULL,
+    manifest_version INTEGER NOT NULL DEFAULT 1,
+    registered_at INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'LIVING',
+    FOREIGN KEY (github_id) REFERENCES users(github_id)
+);
+
+CREATE TABLE IF NOT EXISTS heartbeats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id TEXT NOT NULL,
+    agent_timestamp INTEGER NOT NULL,
+    received_at INTEGER NOT NULL,
+    signature TEXT NOT NULL,
+    FOREIGN KEY (agent_id) REFERENCES agents(agent_id)
+);
+
+CREATE TABLE IF NOT EXISTS backups (
+    id TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    arweave_tx_id TEXT NOT NULL,
+    backup_seq INTEGER NOT NULL,
+    agent_timestamp INTEGER NOT NULL,
+    received_at INTEGER NOT NULL,
+    size_bytes INTEGER NOT NULL,
+    manifest_hash TEXT NOT NULL,
+    FOREIGN KEY (agent_id) REFERENCES agents(agent_id)
+);
+
+CREATE TABLE IF NOT EXISTS auth_challenges (
+    nonce TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    used INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS trust_scores (
+    agent_id TEXT PRIMARY KEY,
+    score REAL NOT NULL,
+    level TEXT NOT NULL,
+    unique_attesters INTEGER NOT NULL,
+    computed_at INTEGER NOT NULL,
+    FOREIGN KEY (agent_id) REFERENCES agents(agent_id)
+);
+
+CREATE TABLE IF NOT EXISTS attestation_notes (
+    hash TEXT PRIMARY KEY,
+    content TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_agents_github_id ON agents(github_id);
+CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status);
+CREATE INDEX IF NOT EXISTS idx_heartbeats_agent ON heartbeats(agent_id, received_at DESC);
+CREATE INDEX IF NOT EXISTS idx_backups_agent ON backups(agent_id, backup_seq DESC);
+CREATE INDEX IF NOT EXISTS idx_auth_challenges_expires ON auth_challenges(expires_at);
+    `);
   }
 
   /**
