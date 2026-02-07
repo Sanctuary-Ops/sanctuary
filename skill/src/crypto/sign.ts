@@ -202,7 +202,7 @@ export async function signBackupHeader(
     Object.keys(header.files)
       .sort()
       .reduce((acc, key) => {
-        acc[key] = header.files[key];
+        acc[key] = header.files[key]!;
         return acc;
       }, {} as Record<string, { size: number; content_hash: string }>)
   );

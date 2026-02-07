@@ -72,7 +72,7 @@ export async function attest(
 
     // Check cooldown
     log('Checking attestation cooldown...');
-    const nextTime = await contract.nextAttestationTime(stored.agentId, about);
+    const nextTime: bigint = await (contract as any).nextAttestationTime(stored.agentId, about);
     if (nextTime > 0n) {
       const waitSeconds = Number(nextTime) - Math.floor(Date.now() / 1000);
       const waitDays = Math.ceil(waitSeconds / 86400);
@@ -83,7 +83,7 @@ export async function attest(
     }
 
     // Get nonce for signature
-    const nonce = await contract.getNonce(stored.agentId);
+    const nonce = await (contract as any).getNonce(stored.agentId);
 
     // Compute note hash
     const noteHash = keccak256(note);

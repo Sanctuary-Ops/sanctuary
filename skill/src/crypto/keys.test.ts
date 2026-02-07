@@ -109,16 +109,16 @@ describe('Key Derivation', () => {
       const keys = await deriveKeys(TEST_MNEMONIC);
 
       // Check clamping: lowest 3 bits of first byte should be 0
-      expect(keys.recoverySecret[0] & 7).toBe(0);
-      expect(keys.recallSecret[0] & 7).toBe(0);
+      expect(keys.recoverySecret[0]! & 7).toBe(0);
+      expect(keys.recallSecret[0]! & 7).toBe(0);
 
       // Check clamping: highest bit of last byte should be 0
-      expect(keys.recoverySecret[31] & 128).toBe(0);
-      expect(keys.recallSecret[31] & 128).toBe(0);
+      expect(keys.recoverySecret[31]! & 128).toBe(0);
+      expect(keys.recallSecret[31]! & 128).toBe(0);
 
       // Check clamping: second-highest bit of last byte should be 1
-      expect(keys.recoverySecret[31] & 64).toBe(64);
-      expect(keys.recallSecret[31] & 64).toBe(64);
+      expect(keys.recoverySecret[31]! & 64).toBe(64);
+      expect(keys.recallSecret[31]! & 64).toBe(64);
     });
   });
 

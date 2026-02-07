@@ -1,9 +1,12 @@
 {
   "name": "sanctuary-skill",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Sanctuary OpenClaw Skill - Identity persistence for AI agents",
   "type": "module",
   "main": "dist/index.js",
+  "bin": {
+    "sanctuary": "./dist/index.js"
+  },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",

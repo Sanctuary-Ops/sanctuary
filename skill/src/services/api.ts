@@ -337,7 +337,7 @@ export class SanctuaryApi {
         body: backupData,
       });
 
-      return response.json();
+      return response.json() as Promise<ApiResponse<BackupUploadResponse>>;
     } catch (error) {
       return {
         success: false,

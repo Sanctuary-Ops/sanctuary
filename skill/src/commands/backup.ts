@@ -11,7 +11,7 @@
  * - pins.json: Pinned memories (optional)
  */
 
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import {
   encryptBackup,
   serializeWrappedKey,
@@ -118,7 +118,7 @@ export async function backup(
 
     // Encrypt backup
     log('Encrypting backup...');
-    const backupId = uuidv4();
+    const backupId = randomUUID();
     const timestamp = Math.floor(Date.now() / 1000);
     const recoveryPubKey = fromHex(stored.recoveryPubKeyHex);
     const recallPubKey = fromHex(stored.recoveryPubKeyHex); // TODO: separate recall pubkey

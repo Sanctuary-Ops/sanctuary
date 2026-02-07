@@ -243,7 +243,7 @@ export async function displayRecall(query: string): Promise<void> {
   }
 
   for (let i = 0; i < result.matches.length; i++) {
-    const match = result.matches[i];
+    const match = result.matches[i]!;
     console.log(`\n  [${i + 1}] ${match.source} (relevance: ${(match.relevance * 100).toFixed(0)}%)`);
     console.log('  ' + '─'.repeat(40));
     console.log('  ' + match.content.split('\n').join('\n  '));

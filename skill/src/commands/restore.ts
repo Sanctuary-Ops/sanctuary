@@ -76,7 +76,7 @@ async function queryArweaveBackups(agentId: string): Promise<ArweaveBackup[]> {
     throw new Error('Failed to query Arweave');
   }
 
-  const data = await response.json();
+  const data: any = await response.json();
   const edges = data?.data?.transactions?.edges || [];
 
   return edges.map((edge: any) => {
@@ -278,7 +278,7 @@ export async function restore(
 
     // Sort by backup_seq descending
     backups.sort((a, b) => b.backupSeq - a.backupSeq);
-    const latest = backups[0];
+    const latest = backups[0]!;
 
     const backupData = await downloadBackup(latest.txId);
     const { header, encryptedFiles } = parseBackupData(backupData);

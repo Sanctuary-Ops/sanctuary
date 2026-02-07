@@ -68,9 +68,9 @@ function mapToValidScalar(bytes: Uint8Array): Uint8Array {
  */
 function clampX25519(secret: Uint8Array): Uint8Array {
   const clamped = new Uint8Array(secret);
-  clamped[0] &= 248;   // Clear lowest 3 bits
-  clamped[31] &= 127;  // Clear highest bit
-  clamped[31] |= 64;   // Set second-highest bit
+  clamped[0]! &= 248;   // Clear lowest 3 bits
+  clamped[31]! &= 127;  // Clear highest bit
+  clamped[31]! |= 64;   // Set second-highest bit
   return clamped;
 }
 
